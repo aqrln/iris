@@ -1,0 +1,13 @@
+[package]
+name = "iris"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "iris"
+bench = false
+test = false
+
+[dependencies]
+riscv = { version = "0.16.1", features = ["s-mode"] }
+sbi-rt = "0.0.4"
