@@ -1,5 +1,9 @@
 #![no_std]
 #![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+#![cfg_attr(test, feature(const_type_name))]
 
 extern crate alloc;
 
@@ -9,6 +13,7 @@ use device_tree_parser::DeviceTreeParser;
 use embedded_alloc::TlsfHeap;
 
 mod console;
+mod shutdown;
 
 #[global_allocator]
 static HEAP: TlsfHeap = TlsfHeap::empty();
@@ -75,18 +80,6 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
     let dtb_data = unsafe { core::slice::from_raw_parts(dtb_address as *const u8, dtb_size as _) };
     let dtp = DeviceTreeParser::new(dtb_data);
 
-    for res in dtp
-        .parse_memory_reservations()
-        .expect("memory reservations must be valid")
-    {
-        println!(
-            "reserved: 0x{:016x}..0x{:016x} (0x{:016x})",
-            res.address,
-            res.address + res.size,
-            res.size
-        );
-    }
-
     let tree = dtp.parse_tree().expect("device tree must be valid");
     // println!("\nDevice tree:\n{tree}");
 
@@ -110,10 +103,55 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
         }
     }
 
+    for res in dtp
+        .parse_memory_reservations()
+        .expect("memory reservations must be valid")
+    {
+        println!(
+            "reserved: 0x{:016x}..0x{:016x} (0x{:016x})",
+            res.address,
+            res.address + res.size,
+            res.size
+        );
+    }
+
+    shutdown::init(&tree).expect("global shutdown device not initialized");
+
+    #[cfg(test)]
+    test_main();
+
     loop {
         riscv::asm::wfi();
     }
 }
+
+#[cfg(test)]
+fn test_runner(tests: &[&Test]) {
+    println!("running {} kernel tests", tests.len());
+    for test in tests {
+        println!("{}...", test.name);
+        (test.run)();
+    }
+    shutdown::get().shutdown_success();
+}
+
+#[cfg(test)]
+pub struct Test {
+    name: &'static str,
+    run: fn(),
+}
+
+#[cfg(test)]
+fn test_true() {
+    assert!(true);
+}
+
+#[cfg(test)]
+#[test_case]
+static _TEST_TRUE: Test = Test {
+    name: core::any::type_name_of_val(&test_true),
+    run: test_true,
+};
 
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {
@@ -124,9 +162,5 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
         None => println!("kernel panic: {}", info.message()),
     }
 
-    _ = sbi_rt::system_reset(sbi_rt::Shutdown, sbi_rt::SystemFailure);
-
-    loop {
-        riscv::asm::wfi();
-    }
+    shutdown::get().shutdown_failure();
 }

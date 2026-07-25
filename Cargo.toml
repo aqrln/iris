@@ -6,10 +6,13 @@ edition = "2024"
 [[bin]]
 name = "iris"
 bench = false
-test = false
+test = true
 
 [dependencies]
+critical-section = "1.2.0"
 device_tree_parser = "0.4.0"
 embedded-alloc = "0.7.0"
+qemu-exit = "4.0.0"
 riscv = { version = "0.16.1", features = ["critical-section-single-hart", "s-mode"] }
 sbi-rt = "0.0.4"
+thiserror = { version = "2.0.19", default-features = false }
