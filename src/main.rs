@@ -1,9 +1,17 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use core::arch::naked_asm;
 
+use device_tree_parser::DeviceTreeParser;
+use embedded_alloc::TlsfHeap;
+
 mod console;
+
+#[global_allocator]
+static HEAP: TlsfHeap = TlsfHeap::empty();
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
@@ -45,6 +53,21 @@ extern "C" fn _start() -> ! {
 #[unsafe(no_mangle)]
 extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
     println!("starting iris on hart {hart_id}, dtb_address={dtb_address}");
+
+    unsafe {
+        embedded_alloc::init!(HEAP, 1024 * 1024);
+    };
+
+    let dtb_magic = dtb_address as *const u32;
+    assert_eq!(u32::from_be(unsafe { *dtb_magic }), 0xd00dfeed);
+
+    let dtb_size = unsafe { *dtb_magic.add(1) };
+    let dtb_data = unsafe { core::slice::from_raw_parts(dtb_address as *const u8, dtb_size as _) };
+    let parser = DeviceTreeParser::new(dtb_data);
+    let tree = parser.parse_tree().unwrap();
+
+    println!("\nDevice tree:\n{tree}");
+
     loop {
         riscv::asm::wfi();
     }
