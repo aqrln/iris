@@ -24,11 +24,8 @@ macro_rules! print {
 
 #[macro_export]
 macro_rules! println {
-    () => {
-        print!("\n")
-    };
-    ($($arg:tt)+) => {{
-        print!($($arg)+);
-        println!();
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        _ = writeln!($crate::console::SbiConsole, $($arg)*);
     }};
 }
