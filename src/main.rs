@@ -71,7 +71,7 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
     let dtb_magic = dtb_address as *const u32;
     assert_eq!(u32::from_be(unsafe { *dtb_magic }), 0xd00dfeed);
 
-    let dtb_size = unsafe { *dtb_magic.add(1) };
+    let dtb_size = u32::from_be(unsafe { *dtb_magic.add(1) });
     let dtb_data = unsafe { core::slice::from_raw_parts(dtb_address as *const u8, dtb_size as _) };
     let dtp = DeviceTreeParser::new(dtb_data);
 
