@@ -73,10 +73,37 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
 
     let dtb_size = unsafe { *dtb_magic.add(1) };
     let dtb_data = unsafe { core::slice::from_raw_parts(dtb_address as *const u8, dtb_size as _) };
-    let parser = DeviceTreeParser::new(dtb_data);
-    let tree = parser.parse_tree().unwrap();
+    let dtp = DeviceTreeParser::new(dtb_data);
 
-    println!("\nDevice tree:\n{tree}");
+    for reservation in dtp.parse_memory_reservations().unwrap() {
+        println!(
+            "reserved: 0x{:016x}..0x{:016x} (0x{:016x})",
+            reservation.address,
+            reservation.address + reservation.size,
+            reservation.size
+        );
+    }
+
+    let tree = dtp.parse_tree().unwrap();
+    // println!("\nDevice tree:\n{tree}");
+
+    for node in tree.iter_nodes() {
+        if node.prop_string("device_type") == Some("memory") {
+            let addrs = node.translate_reg_addresses(Some(&tree)).unwrap();
+            for (addr, size) in addrs {
+                let size_unit = match size {
+                    x if x >= 1024 * 1024 * 1024 => format_args!("{} GB", x / 1024 / 1024 / 1024),
+                    x if x >= 1024 * 1024 => format_args!("{} MB", x / 1024 / 1024),
+                    x if x >= 1024 => format_args!("{} KB", x / 1024),
+                    x => format_args!("{} B", x.clone()),
+                };
+                println!(
+                    "{size_unit} of memory found at 0x{addr:016x}..0x{:016x}",
+                    addr + size
+                );
+            }
+        }
+    }
 
     loop {
         riscv::asm::wfi();
