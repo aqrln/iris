@@ -50,8 +50,18 @@ extern "C" fn _start() -> ! {
     )
 }
 
+static LOGO: &str = r#"
+
+(_)_ __(_)___ 
+| | '__| / __|
+| | |  | \__ \
+|_|_|  |_|___/
+
+"#;
+
 #[unsafe(no_mangle)]
 extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
+    println!("{LOGO}");
     println!("starting iris on hart {hart_id}, dtb_address={dtb_address}");
 
     unsafe {
