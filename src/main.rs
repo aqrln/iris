@@ -75,21 +75,26 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
     let dtb_data = unsafe { core::slice::from_raw_parts(dtb_address as *const u8, dtb_size as _) };
     let dtp = DeviceTreeParser::new(dtb_data);
 
-    for reservation in dtp.parse_memory_reservations().unwrap() {
+    for res in dtp
+        .parse_memory_reservations()
+        .expect("memory reservations must be valid")
+    {
         println!(
             "reserved: 0x{:016x}..0x{:016x} (0x{:016x})",
-            reservation.address,
-            reservation.address + reservation.size,
-            reservation.size
+            res.address,
+            res.address + res.size,
+            res.size
         );
     }
 
-    let tree = dtp.parse_tree().unwrap();
+    let tree = dtp.parse_tree().expect("device tree must be valid");
     // println!("\nDevice tree:\n{tree}");
 
     for node in tree.iter_nodes() {
         if node.prop_string("device_type") == Some("memory") {
-            let addrs = node.translate_reg_addresses(Some(&tree)).unwrap();
+            let addrs = node
+                .translate_reg_addresses(Some(&tree))
+                .expect("register property of the memory device must be valid");
             for (addr, size) in addrs {
                 let size_unit = match size {
                     x if x >= 1024 * 1024 * 1024 => format_args!("{} GB", x / 1024 / 1024 / 1024),
