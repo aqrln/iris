@@ -47,11 +47,8 @@ pub fn init<'a>(dt_root: &DeviceTreeNode<'a>) -> Result<(), InitError<'a>> {
 }
 
 pub fn get() -> &'static dyn Shutdown {
-    critical_section::with(|cs| {
-        *GLOBAL_SHUTDOWN
-            .borrow(cs)
-            .get_or_init(|| &SBI_SHUTDOWN_SINGLETON)
-    })
+    critical_section::with(|cs| GLOBAL_SHUTDOWN.borrow(cs).get().copied())
+        .unwrap_or(&SBI_SHUTDOWN_SINGLETON)
 }
 
 pub trait Shutdown: Send + Sync {
