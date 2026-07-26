@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
+#![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![cfg_attr(test, feature(const_type_name))]
 
@@ -14,6 +14,8 @@ use embedded_alloc::TlsfHeap;
 
 mod console;
 mod shutdown;
+#[cfg(test)]
+mod test;
 
 #[global_allocator]
 static HEAP: TlsfHeap = TlsfHeap::empty();
@@ -124,34 +126,6 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
         riscv::asm::wfi();
     }
 }
-
-#[cfg(test)]
-fn test_runner(tests: &[&Test]) {
-    println!("running {} kernel tests", tests.len());
-    for test in tests {
-        println!("{}...", test.name);
-        (test.run)();
-    }
-    shutdown::get().shutdown_success();
-}
-
-#[cfg(test)]
-pub struct Test {
-    name: &'static str,
-    run: fn(),
-}
-
-#[cfg(test)]
-fn test_true() {
-    assert!(true);
-}
-
-#[cfg(test)]
-#[test_case]
-static _TEST_TRUE: Test = Test {
-    name: core::any::type_name_of_val(&test_true),
-    run: test_true,
-};
 
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {
