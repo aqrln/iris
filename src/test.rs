@@ -1,5 +1,3 @@
-use paste::paste;
-
 use crate::{print, println, shutdown};
 
 pub fn test_runner(tests: &[&Test]) {
@@ -22,12 +20,12 @@ macro_rules! test {
 
     ($name:ident $body:block $($t:tt)*) => {
         fn $name() $body
-        paste! {
+        ::paste::paste! {
             #[cfg(test)]
             #[test_case]
             #[allow(non_upper_case_globals)]
             static [<_TEST_ $name>]: $crate::test::Test = $crate::test::Test {
-                name: core::any::type_name_of_val(&$name),
+                name: ::core::any::type_name_of_val(&$name),
                 run: $name,
             };
         }
