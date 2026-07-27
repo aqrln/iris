@@ -1,24 +1,42 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
+#![feature(debug_closure_helpers)]
+#![cfg_attr(test, feature(const_type_name))]
 #![test_runner(crate::test::test_runner)]
 #![reexport_test_harness_main = "test_main"]
-#![cfg_attr(test, feature(const_type_name))]
 
 extern crate alloc;
 
 use core::arch::naked_asm;
 
+use alloc::vec;
 use device_tree_parser::DeviceTreeParser;
 use embedded_alloc::TlsfHeap;
 
+use crate::mmu::{
+    MemoryManager, PagePermissions,
+    addr::{AddressRange, PageType},
+};
+
 mod console;
+mod mmu;
 mod shutdown;
 #[cfg(test)]
 mod test;
 
 #[global_allocator]
 static HEAP: TlsfHeap = TlsfHeap::empty();
+
+unsafe extern "C" {
+    static __firmware_start: u8;
+    static __text_start: u8;
+    static __rodata_start: u8;
+    static __data_start: u8;
+    static __stack_protector: u8;
+    static __stack_bottom: u8;
+    static __stack_top: u8;
+}
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
@@ -98,7 +116,7 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
                     x => format_args!("{} B", x.clone()),
                 };
                 println!(
-                    "{size_unit} of memory found at 0x{addr:016x}..0x{:016x}",
+                    "{size_unit} of memory found at {addr:#016x}..{:#016x}",
                     addr + size
                 );
             }
@@ -110,14 +128,40 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
         .expect("memory reservations must be valid")
     {
         println!(
-            "reserved: 0x{:016x}..0x{:016x} (0x{:016x})",
+            "reserved: {:#016x}..{:#016x} ({:#016x})",
             res.address,
             res.address + res.size,
             res.size
         );
     }
 
-    shutdown::init(&tree).expect("global shutdown device not initialized");
+    let mut mm = MemoryManager::new_with_global_mappings(vec![
+        (
+            (&raw const __text_start..&raw const __rodata_start).into(),
+            PagePermissions::READ | PagePermissions::EXECUTE,
+        ),
+        (
+            (&raw const __rodata_start..&raw const __data_start).into(),
+            PagePermissions::READ,
+        ),
+        (
+            (&raw const __data_start..&raw const __stack_protector).into(),
+            PagePermissions::READ | PagePermissions::WRITE,
+        ),
+        (
+            (&raw const __stack_bottom..&raw const __stack_top).into(),
+            PagePermissions::READ | PagePermissions::WRITE,
+        ),
+    ])
+    .expect("global kernel mappings should have properly aligned addresses");
+
+    mm.map_kernel_identity(
+        AddressRange::from(dtb_data.as_ptr_range()).with_aligned_end(PageType::Small),
+        PagePermissions::READ,
+    )
+    .expect("dtb should be aligned");
+
+    shutdown::init(&tree, &mut mm).expect("global shutdown device not initialized");
 
     #[cfg(test)]
     test_main();

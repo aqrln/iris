@@ -9,6 +9,7 @@ bench = false
 test = true
 
 [dependencies]
+bitflags = "2.13.1"
 critical-section = "1.2.0"
 device_tree_parser = "0.4.0"
 embedded-alloc = "0.7.0"

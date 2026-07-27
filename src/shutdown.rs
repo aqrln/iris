@@ -5,7 +5,13 @@ use critical_section::Mutex;
 use device_tree_parser::{DeviceTreeNode, DtbError};
 use qemu_exit::QEMUExit;
 
-use crate::println;
+use crate::{
+    mmu::{
+        MapError, MemoryManager,
+        addr::{PageType, PhysicalAddr},
+    },
+    println,
+};
 
 static GLOBAL_SHUTDOWN: Mutex<OnceCell<&'static dyn Shutdown>> = Mutex::new(OnceCell::new());
 
@@ -17,9 +23,11 @@ pub enum InitError<'a> {
     NoReg(&'a str),
     #[error("shutdown::init called more than once")]
     AlreadyInitialized,
+    #[error("mmio mapping error: {0}")]
+    MmioMap(#[from] MapError),
 }
 
-pub fn init<'a>(dt_root: &DeviceTreeNode<'a>) -> Result<(), InitError<'a>> {
+pub fn init<'a>(dt_root: &DeviceTreeNode<'a>, mm: &mut MemoryManager) -> Result<(), InitError<'a>> {
     const COMPATIBLE: &str = "sifive,test1";
 
     let shutdown = {
@@ -28,15 +36,12 @@ pub fn init<'a>(dt_root: &DeviceTreeNode<'a>) -> Result<(), InitError<'a>> {
             let reg = test_dev
                 .translate_reg_addresses(Some(dt_root))
                 .map_err(InitError::DtbError)?;
-            let (addr, _) = reg
+            let addr = reg
                 .first()
-                .copied()
+                .map(|&(addr, _)| PhysicalAddr::new(addr))
                 .ok_or(InitError::NoReg(test_dev.name))?;
-            println!(
-                "found sifive_test device {} at 0x{addr:016x}",
-                test_dev.name
-            );
-            Box::leak(Box::new(QemuShutdown::new(addr))) as _
+            println!("found sifive_test device {} at {addr}", test_dev.name);
+            Box::leak(Box::new(QemuShutdown::from_unmapped(addr, mm)?)) as _
         } else {
             &SBI_SHUTDOWN_SINGLETON as _
         }
@@ -81,16 +86,17 @@ fn never_return() -> ! {
 }
 
 pub struct QemuShutdown {
-    addr: u64,
+    addr: PhysicalAddr,
 }
 
 impl QemuShutdown {
-    fn new(addr: u64) -> Self {
-        Self { addr }
+    fn from_unmapped(addr: PhysicalAddr, mm: &mut MemoryManager) -> Result<Self, MapError> {
+        mm.map_kernel_mmio(addr.page(PageType::Small))?;
+        Ok(Self { addr })
     }
 
     fn qemu_exit(&self) -> qemu_exit::RISCV64 {
-        unsafe { qemu_exit::RISCV64::new(self.addr) }
+        unsafe { qemu_exit::RISCV64::new(self.addr.get()) }
     }
 }
 

@@ -2,18 +2,23 @@ ENTRY(_start)
 
 SECTIONS
 {
+    __firmware_start = 0x80000000;
+
     . = 0x80200000;
 
     .text : ALIGN(4K) {
+        __text_start = .;
         *(.text.init)
         *(.text .text.*)
     }
 
     .rodata : ALIGN(4K) {
+        __rodata_start = .;
         *(.rodata .rodata.*)
     }
 
     .data : ALIGN(4K) {
+        __data_start = .;
         *(.data .data.*)
         __small_data_start = .;
         *(.sdata .sdata.*)
@@ -34,7 +39,9 @@ SECTIONS
         __bss_end = .;
     }
 
-    .stack (NOLOAD) : ALIGN(16) {
+    .stack (NOLOAD) : ALIGN(4K) {
+        __stack_protector = .;
+        . += 4K;
         __stack_bottom = .;
         . += 64K;
         __stack_top = .;
