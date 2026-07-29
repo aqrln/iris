@@ -1,13 +1,16 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use bitflags::bitflags;
 
-use crate::mmu::{
-    addr::{AddressRange, PageType, PhysicalAddr, VirtualAddr},
-    pte::PteSlot,
+use crate::{
+    mmu::{
+        addr::{AddressRange, PageType, PhysicalAddr, VirtualAddr},
+        pte::{InvalidPermissions, PteSlot, PteValue},
+    },
+    println,
 };
 
 pub mod addr;
-mod pte;
+pub mod pte;
 
 #[repr(C, align(4096))]
 struct PageTable {
@@ -17,8 +20,12 @@ struct PageTable {
 impl PageTable {
     fn new() -> Self {
         Self {
-            entries: [const { PteSlot::unmapped() }; _],
+            entries: [const { PteSlot::new(PteValue::unmapped()) }; _],
         }
+    }
+
+    fn entry(&self, idx: usize) -> &PteSlot {
+        &self.entries[idx]
     }
 }
 
@@ -51,11 +58,10 @@ pub enum MapError {
         psize = .1.size())
     ]
     MismatchedLength(AddressRange<VirtualAddr>, AddressRange<PhysicalAddr>),
-    #[error("range {requested} overlaps with already mapped range {mapped} in this address space")]
-    Conflict {
-        requested: VirtualAddr,
-        mapped: AddressRange<VirtualAddr>,
-    },
+    #[error("range {0} is already mapped in this address space")]
+    Conflict(AddressRange<VirtualAddr>),
+    #[error("invalid page permissions: {0}")]
+    InvalidPermissions(#[from] InvalidPermissions),
 }
 
 bitflags! {
@@ -98,6 +104,8 @@ impl AddressSpace {
         mut physical_range: AddressRange<PhysicalAddr>,
         permissions: PagePermissions,
     ) -> Result<(), MapError> {
+        println!("mapping range {virtual_range}");
+
         for addr in [virtual_range.start, virtual_range.end] {
             if !addr.is_aligned(PageType::Small) {
                 return Err(MapError::VirtualUnaligned(addr));
@@ -132,9 +140,19 @@ impl AddressSpace {
             }
         }
 
+        assert!(virtual_range.size() == 0);
+        assert!(physical_range.size() == 0);
+
         Ok(())
     }
 
+    /// Maps a single page without alignment checks.
+    ///
+    /// Although the page table has interior mutability and an exclusive reference
+    /// is not required for mutation, it is important for correctness: it statically
+    /// proves that this method cannot be used concurrently and nothing can mutate
+    /// the page table entries at the same time (other than the CPU setting the
+    /// dirty/accessed flags).
     fn map_page(
         &mut self,
         page_type: PageType,
@@ -142,7 +160,58 @@ impl AddressSpace {
         physical_addr: PhysicalAddr,
         permissions: PagePermissions,
     ) -> Result<(), MapError> {
-        todo!()
+        let map_leaf_pte = |table: &PageTable, pte_index| {
+            let pte = table.entry(pte_index);
+            if pte.load().is_valid() {
+                Err(MapError::Conflict(AddressRange::page(
+                    virtual_addr,
+                    page_type,
+                )))
+            } else {
+                Ok(pte.store(PteValue::leaf(physical_addr, permissions)?))
+            }
+        };
+
+        let get_or_create_page_table = |parent_table: &PageTable, parent_pte_index| {
+            let pte = parent_table.entry(parent_pte_index);
+            let pte_val = pte.load();
+
+            if !pte_val.is_valid() {
+                let next_table = Box::leak(Box::new(PageTable::new())) as &_;
+                let addr = VirtualAddr::expose_provenance(next_table as *const _);
+                let phys_addr = addr.identity_mapped_physical();
+                pte.store(PteValue::non_leaf(phys_addr));
+                Ok(next_table)
+            } else if pte_val.is_leaf() {
+                Err(MapError::Conflict(AddressRange::page(
+                    virtual_addr,
+                    page_type,
+                )))
+            } else {
+                let phys_addr = PhysicalAddr::from_ppn(pte_val.ppn());
+                let addr = phys_addr.identity_mapped_virtual();
+                let ptr = core::ptr::with_exposed_provenance::<PageTable>(addr.get());
+                Ok(unsafe { &*ptr })
+            }
+        };
+
+        let map_indirect_pte = |parent_table, parent_pte_index, leaf_pte_index| {
+            map_leaf_pte(
+                get_or_create_page_table(parent_table, parent_pte_index)?,
+                leaf_pte_index,
+            )
+        };
+
+        match page_type {
+            PageType::Huge => map_leaf_pte(&self.root, virtual_addr.vpn2()),
+            PageType::Large => {
+                map_indirect_pte(&self.root, virtual_addr.vpn2(), virtual_addr.vpn1())
+            }
+            PageType::Small => {
+                let next_table = get_or_create_page_table(&self.root, virtual_addr.vpn2())?;
+                map_indirect_pte(next_table, virtual_addr.vpn1(), virtual_addr.vpn0())
+            }
+        }
     }
 }
 

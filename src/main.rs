@@ -153,13 +153,13 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
             PagePermissions::READ | PagePermissions::WRITE,
         ),
     ])
-    .expect("global kernel mappings should have properly aligned addresses");
+    .expect("failed to map kernel address space");
 
     mm.map_kernel_identity(
         AddressRange::from(dtb_data.as_ptr_range()).with_aligned_end(PageType::Small),
         PagePermissions::READ,
     )
-    .expect("dtb should be aligned");
+    .expect("failed to map dtb");
 
     shutdown::init(&tree, &mut mm).expect("global shutdown device not initialized");
 

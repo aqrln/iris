@@ -8,7 +8,7 @@ use qemu_exit::QEMUExit;
 use crate::{
     mmu::{
         MapError, MemoryManager,
-        addr::{PageType, PhysicalAddr},
+        addr::{AddressRange, PageType, PhysicalAddr},
     },
     println,
 };
@@ -91,7 +91,7 @@ pub struct QemuShutdown {
 
 impl QemuShutdown {
     fn from_unmapped(addr: PhysicalAddr, mm: &mut MemoryManager) -> Result<Self, MapError> {
-        mm.map_kernel_mmio(addr.page(PageType::Small))?;
+        mm.map_kernel_mmio(AddressRange::page(addr, PageType::Small))?;
         Ok(Self { addr })
     }
 

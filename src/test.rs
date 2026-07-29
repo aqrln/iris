@@ -11,14 +11,15 @@ pub fn test_runner(tests: &[&Test]) {
 }
 
 pub struct Test {
-    name: &'static str,
-    run: fn(),
+    pub name: &'static str,
+    pub run: fn(),
 }
 
-macro_rules! test {
+#[macro_export]
+macro_rules! tests {
     () => {};
 
-    ($name:ident $body:block $($t:tt)*) => {
+    (fn $name:ident () $body:block $($t:tt)*) => {
         fn $name() $body
         ::paste::paste! {
             #[cfg(test)]
@@ -30,16 +31,16 @@ macro_rules! test {
             };
         }
 
-        test!($($t)*);
+        tests!($($t)*);
     };
 }
 
-test! {
-    test_true {
+tests! {
+    fn test_true() {
         assert!(true);
     }
 
-    test_one_is_one {
+    fn test_one_is_one() {
         assert_eq!(1, 1);
     }
 }

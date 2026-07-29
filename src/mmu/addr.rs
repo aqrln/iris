@@ -23,6 +23,7 @@ pub struct PhysicalAddr(u64);
 
 impl PhysicalAddr {
     pub const fn new(addr: u64) -> Self {
+        // TODO: validate 56-bit physical addr
         Self(addr)
     }
 
@@ -34,8 +35,8 @@ impl PhysicalAddr {
         self.0 >> 12
     }
 
-    pub fn page(self, page_type: PageType) -> AddressRange<Self> {
-        AddressRange::new(self, Self(self.0 + page_type.size() as u64))
+    pub fn from_ppn(ppn: u64) -> Self {
+        Self::new(ppn << 12)
     }
 
     pub fn identity_mapped_virtual(self) -> VirtualAddr {
@@ -71,6 +72,12 @@ impl From<PhysicalAddr> for usize {
     }
 }
 
+impl From<usize> for PhysicalAddr {
+    fn from(value: usize) -> Self {
+        Self::new(value as _)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct VirtualAddr(usize);
@@ -79,6 +86,10 @@ impl VirtualAddr {
     // TODO: add virtual address validation (canonical lower or upper half)
     pub const fn new(addr: usize) -> Self {
         Self(addr)
+    }
+
+    pub fn expose_provenance<T>(ptr: *const T) -> Self {
+        Self::new(ptr.expose_provenance())
     }
 
     pub fn get(self) -> usize {
@@ -119,8 +130,8 @@ impl fmt::Debug for VirtualAddr {
 }
 
 impl<T> From<*const T> for VirtualAddr {
-    fn from(value: *const T) -> Self {
-        Self::new(value.addr())
+    fn from(ptr: *const T) -> Self {
+        Self::expose_provenance(ptr)
     }
 }
 
@@ -185,6 +196,10 @@ where
             self.start,
             self.end.into().next_multiple_of(page_type.size()).into(),
         )
+    }
+
+    pub fn page(start: T, page_type: PageType) -> Self {
+        Self::new(start, start.into().strict_add(page_type.size()).into())
     }
 }
 
