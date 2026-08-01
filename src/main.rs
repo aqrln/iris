@@ -155,11 +155,16 @@ extern "C" fn main(hart_id: usize, dtb_address: usize) -> ! {
     ])
     .expect("failed to map kernel address space");
 
-    mm.map_kernel_identity(
+    mm.identity_map_kernel(
         AddressRange::from(dtb_data.as_ptr_range()).with_aligned_end(PageType::Small),
         PagePermissions::READ,
     )
-    .expect("failed to map dtb");
+    .expect("failed to map dtb")
+    .do_not_flush();
+
+    unsafe {
+        mm.enable_virtual_memory();
+    }
 
     shutdown::init(&tree, &mut mm).expect("global shutdown device not initialized");
 
